@@ -8,7 +8,7 @@ Untuk meningkatkan keamanan, program ini juga mengenkripsi pesan menggunakan **k
 
 ## 🖼️ Tampilan Demo
 
-(assets/image.png)
+![Contoh Animasi Jaringan Saraf Tiruan](assets/image.png)
 
 ---
 
