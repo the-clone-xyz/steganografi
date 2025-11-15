@@ -4,6 +4,14 @@ Ini adalah aplikasi desktop yang dibuat dengan Python dan Tkinter yang memungkin
 
 Untuk meningkatkan keamanan, program ini juga mengenkripsi pesan menggunakan **kata sandi** sebelum menyisipkannya ke dalam gambar.
 
+---
+
+## 🖼️ Tampilan Demo
+
+(assets/image.png)
+
+---
+
 ## ✨ Fitur Utama
 
 - **Sisipkan Teks (Encode):** Menyembunyikan pesan teks rahasia ke dalam file gambar (`.png`).

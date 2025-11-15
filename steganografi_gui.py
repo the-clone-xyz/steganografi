@@ -14,11 +14,7 @@ from cryptography.hazmat.backends import default_backend
 import base64
 
 # ===================================================================
-# FUNGSI LOGIKA (Diperbarui dengan log_callback dan penanganan Error)
-# ===================================================================
-# Catatan: Fungsi-fungsi ini sekarang TIDAK memanggil messagebox.
-# Mereka memanggil log_callback() untuk melapor,
-# dan melempar Exception jika terjadi error.
+# FUNGSI LOGIKA (Tidak ada perubahan di sini dari v4.1/4.2)
 # ===================================================================
 
 def derive_key(password: str, salt: bytes = b'salt_') -> bytes:
@@ -39,9 +35,9 @@ def decrypt_message(token: bytes, password: str) -> str | None:
         f = Fernet(key)
         return f.decrypt(token).decode()
     except InvalidToken:
-        return None # Kata sandi salah
+        return None 
     except Exception:
-        return None # Data rusak/bukan token
+        return None 
 
 def bytes_to_binary_string(data: bytes) -> str:
     return ''.join(format(byte, '08b') for byte in data)
@@ -50,35 +46,27 @@ def binary_string_to_bytes(binary_str: str) -> bytes:
     return bytes(int(binary_str[i:i+8], 2) for i in range(0, len(binary_str), 8))
 
 def gui_encode_image(image_path: str, secret_text: str, password: str, output_path: str, log_callback):
-    """Fitur 1: Mengenkripsi dan menyisipkan teks. Melempar Exception jika gagal."""
     try:
         log_callback("Membuka gambar sumber...")
         img = Image.open(image_path)
         img = img.convert('RGB')
     except Exception as e:
         raise IOError(f"Gagal membuka gambar: {e}")
-
     if not password:
         raise ValueError("Kata sandi diperlukan.")
-
     log_callback("Mengenkripsi pesan...")
     encrypted_message = encrypt_message(secret_text, password)
-    
     message_length = len(encrypted_message)
     length_header = struct.pack('!I', message_length)
-    
     data_to_hide = length_header + encrypted_message
     binary_data_to_hide = bytes_to_binary_string(data_to_hide)
-    
     data_index = 0
     img_data = list(img.getdata())
-    
     max_bits = len(img_data) * 3
     log_callback(f"Ukuran data: {len(binary_data_to_hide)} bits. Kapasitas gambar: {max_bits} bits.")
     if len(binary_data_to_hide) > max_bits:
         raise ValueError(f"Teks terlalu panjang.\nKapasitas maks: {max_bits // 8} bytes.\nUkuran pesan: {len(data_to_hide)} bytes.")
-
-    log_callback("Memulai penyisipan LSB (Least Significant Bit)...")
+    log_callback("Memulai penyisipan LSB...")
     new_img_data = []
     for pixel in img_data:
         new_pixel = list(pixel)
@@ -87,8 +75,7 @@ def gui_encode_image(image_path: str, secret_text: str, password: str, output_pa
                 new_pixel[i] = (pixel[i] & 254) | int(binary_data_to_hide[data_index])
                 data_index += 1
         new_img_data.append(tuple(new_pixel))
-
-    log_callback("Membuat gambar baru dengan data tersembunyi...")
+    log_callback("Membuat gambar baru...")
     try:
         new_img = Image.new(img.mode, img.size)
         new_img.putdata(new_img_data)
@@ -100,20 +87,16 @@ def gui_encode_image(image_path: str, secret_text: str, password: str, output_pa
         raise IOError(f"Gagal menyimpan file: {e}")
 
 def gui_decode_image(image_path: str, password: str, log_callback) -> str | None:
-    """Fitur 2: Mengekstrak teks. Melempar Exception jika error, mengembalikan None jika tidak ada/sandi salah."""
     try:
         log_callback("Membuka gambar untuk pengecekan...")
         img = Image.open(image_path)
         img = img.convert('RGB')
     except Exception as e:
         raise IOError(f"Gagal membuka gambar: {e}")
-
     if not password:
         raise ValueError("Kata sandi diperlukan.")
-
     binary_data_extracted = ""
     img_data = list(img.getdata())
-    
     log_callback("Mengekstrak header (32 bits pertama)...")
     header_bits = 32
     for pixel in img_data:
@@ -121,28 +104,25 @@ def gui_decode_image(image_path: str, password: str, log_callback) -> str | None
             binary_data_extracted += str(pixel[i] % 2)
             if len(binary_data_extracted) == header_bits: break
         if len(binary_data_extracted) == header_bits: break
-    
     if len(binary_data_extracted) < header_bits:
         log_callback("Gambar terlalu kecil untuk memiliki header. Tidak ada data.")
         return None
-
     log_callback("Mendekode header untuk ukuran pesan...")
     length_header_bytes = binary_string_to_bytes(binary_data_extracted)
     message_length = struct.unpack('!I', length_header_bytes)[0]
-    
     if message_length == 0:
         log_callback("Header menunjukkan panjang 0. Kemungkinan gambar bersih.")
         return None
-
-    total_bits_to_read = header_bits + (message_length * 8)
-    log_callback(f"Header terdeteksi. Ukuran pesan: {message_length} bytes. Total bits akan dibaca: {total_bits_to_read}.")
-    
-    binary_data_extracted = ""
-    
     max_bits = len(img_data) * 3
+    message_bits = message_length * 8
+    total_bits_to_read = header_bits + message_bits
     if total_bits_to_read > max_bits:
-        raise ValueError(f"Data terdeteksi rusak. Header meminta {total_bits_to_read} bits, tapi gambar hanya punya {max_bits} bits.")
-
+        log_callback(f"Header meminta {total_bits_to_read} bits (Pesan: {message_length} bytes).")
+        log_callback(f"Kapasitas gambar hanya {max_bits} bits.")
+        log_callback("Ini kemungkinan file asli/bersih. Dibatalkan.")
+        return None 
+    log_callback(f"Header terdeteksi. Ukuran pesan: {message_length} bytes. Total bits akan dibaca: {total_bits_to_read}.")
+    binary_data_extracted = ""
     log_callback("Mengekstrak data pesan dari gambar...")
     data_index = 0
     for pixel in img_data:
@@ -151,40 +131,32 @@ def gui_decode_image(image_path: str, password: str, log_callback) -> str | None
             data_index += 1
             if data_index == total_bits_to_read: break
         if data_index == total_bits_to_read: break
-
     log_callback("Mengonversi data biner ke bytes...")
     binary_message_data = binary_data_extracted[header_bits:]
     encrypted_message_bytes = binary_string_to_bytes(binary_message_data)
-    
     log_callback("Mencoba mendekripsi data...")
     decrypted_text = decrypt_message(encrypted_message_bytes, password)
-    
     if decrypted_text is None:
         log_callback("Gagal dekripsi. Kata sandi salah atau data rusak.")
         return None
-    
     log_callback("Dekripsi sukses!")
     return decrypted_text
 
 def gui_clean_image(image_path: str, output_path: str, log_callback) -> bool:
-    """Fitur 3: Membersihkan gambar. Melempar Exception jika gagal."""
     try:
         log_callback(f"Membuka gambar untuk dibersihkan: {image_path}...")
         img = Image.open(image_path)
         img = img.convert('RGB')
     except Exception as e:
         raise IOError(f"Gagal membuka gambar: {e}")
-
     img_data = list(img.getdata())
     new_img_data = []
-
     log_callback("Memproses piksel untuk membersihkan LSB (set ke 0)...")
     for pixel in img_data:
         new_pixel = list(pixel)
         for i in range(3):
             new_pixel[i] = new_pixel[i] & 254
         new_img_data.append(tuple(new_pixel))
-
     try:
         log_callback("Membuat gambar baru yang bersih...")
         new_img = Image.new(img.mode, img.size)
@@ -197,19 +169,19 @@ def gui_clean_image(image_path: str, output_path: str, log_callback) -> bool:
         raise IOError(f"Gagal menyimpan file bersih: {e}")
 
 # ===================================================================
-# KELAS APLIKASI GUI (TKINTER) - Diperbarui dengan Log Teks
+# KELAS APLIKASI GUI (TKINTER) 
 # ===================================================================
 
 class SteganographyApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Program Steganografi v4.0 (dengan Log)")
-        self.root.geometry("600x750") # Lebih tinggi untuk log
+        self.root.title("Program Steganografi v4.3.1 (Auto-Input)") # Versi diperbarui
+        self.root.geometry("600x750")
         self.root.configure(bg="#f0f0f0")
 
         self.input_file_path = ""
         self.output_file_path = ""
-        self.task_running = False # Penanda untuk mencegah tugas ganda
+        self.task_running = False 
 
         # --- Frame untuk File I/O ---
         file_frame = tk.Frame(root, bg="#f0f0f0", bd=2, relief=tk.GROOVE)
@@ -237,10 +209,10 @@ class SteganographyApp:
 
         # --- Frame untuk Teks Rahasia ---
         text_frame = tk.Frame(root, bg="#f0f0f0", bd=2, relief=tk.GROOVE)
-        text_frame.pack(fill="x", padx=10, pady=5) # Berubah dari fill="both"
+        text_frame.pack(fill="x", padx=10, pady=5)
         lbl_text = tk.Label(text_frame, text="4. Masukkan/Lihat Teks Rahasia:", bg="#f0f0f0")
         lbl_text.pack(anchor="w", padx=10, pady=5)
-        self.text_area = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, height=8) # Tinggi dikurangi
+        self.text_area = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, height=8)
         self.text_area.pack(fill="x", expand=True, padx=10, pady=10)
         
         # --- Frame Tombol Aksi ---
@@ -258,14 +230,14 @@ class SteganographyApp:
         self.btn_clear_text = tk.Button(extra_action_frame, text="Bersihkan Teks Area", command=self.clear_text_action, bg="#FF9800", fg="white", font=("Arial", 10, "bold"))
         self.btn_clear_text.pack(side="left", fill="x", expand=True, padx=5, pady=5)
         
-        # --- Frame LOG TERMINAL (BARU) ---
+        # --- Frame LOG TERMINAL ---
         log_frame = tk.Frame(root, bg="#f0f0f0", bd=2, relief=tk.GROOVE)
         log_frame.pack(fill="both", expand=True, padx=10, pady=10)
         lbl_log = tk.Label(log_frame, text="Log Proses:", bg="#f0f0f0")
         lbl_log.pack(anchor="w", padx=10, pady=5)
         self.log_area = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=10, bg="black", fg="white")
         self.log_area.pack(fill="both", expand=True, padx=10, pady=10)
-        self.log_area.config(state="disabled") # Hanya bisa dilihat
+        self.log_area.config(state="disabled")
 
         # --- Status Bar ---
         self.status_var = tk.StringVar()
@@ -273,7 +245,6 @@ class SteganographyApp:
         self.status_bar = tk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w", padx=10)
         self.status_bar.pack(side="bottom", fill="x")
 
-        # Kumpulan tombol untuk di-nonaktifkan
         self.buttons = [
             self.btn_input, self.btn_output, self.btn_encode, self.btn_decode,
             self.btn_clean, self.btn_clear_text, self.show_pass_check
@@ -288,15 +259,13 @@ class SteganographyApp:
         self.status_bar.config(fg=color)
 
     def log_message(self, message):
-        """Fungsi aman untuk menambah log dari thread manapun."""
         self.log_area.config(state="normal")
         timestamp = time.strftime("%H:%M:%S")
         self.log_area.insert("end", f"[{timestamp}] {message}\n")
-        self.log_area.see("end") # Auto-scroll
+        self.log_area.see("end")
         self.log_area.config(state="disabled")
 
     def log_message_safe(self, message):
-        """Wrapper untuk memanggil log_message dari background thread."""
         self.root.after(0, self.log_message, message)
 
     def select_input_file(self):
@@ -331,7 +300,6 @@ class SteganographyApp:
     # --- Fungsi Kontrol UI dan Thread ---
 
     def start_task(self, task_name):
-        """Memvalidasi dan memulai tugas jika tidak ada yang berjalan."""
         if self.task_running:
             messagebox.showwarning("Sedang Bekerja", "Tugas lain sedang berjalan. Harap tunggu.")
             return False
@@ -340,38 +308,46 @@ class SteganographyApp:
         for button in self.buttons: button.config(state="disabled")
         
         self.log_area.config(state="normal")
-        self.log_area.delete("1.0", "end") # Hapus log lama
+        self.log_area.delete("1.0", "end")
         self.log_area.config(state="disabled")
         
         self.log_message(f"Memulai tugas: {task_name}...")
         self.update_status(f"Menjalankan {task_name}...", "blue")
         return True
 
-    def end_task(self, status_message, color):
-        """Mengaktifkan kembali UI setelah tugas selesai."""
+    def end_task(self, status_message, color, msg_box=None):
         for button in self.buttons: button.config(state="normal")
         self.update_status(status_message, color)
         self.log_message(f"Tugas Selesai. Status: {status_message}")
         self.task_running = False
+        
+        if msg_box:
+            if msg_box['type'] == 'info':
+                messagebox.showinfo(msg_box['title'], msg_box['message'])
+            elif msg_box['type'] == 'error':
+                messagebox.showerror(msg_box['title'], msg_box['message'])
 
     # --- Aksi Tombol (Versi Threaded) ---
 
     def threaded_encode_action(self):
-        # 1. Validasi di thread utama
         if not self.start_task("Penyisipan Teks"): return
+        
+        # --- PERBAIKAN v4.3.1 ADA DI SINI ---
+        # Mengganti "1.Selesai"0" kembali ke "1.0"
         if not all([self.input_file_path, self.output_file_path, self.password_entry.get(), self.text_area.get("1.0", "end-1c")]):
-            messagebox.showerror("Input Kurang", "Harap isi Gambar Asli, Lokasi Simpan, Kata Sandi, dan Teks Rahasia.")
-            self.end_task("Gagal: Input tidak lengkap", "red")
+        # --- AKHIR PERBAIKAN ---
+            
+            msg_box = {'type': 'error', 'title': 'Input Kurang', 'message': 'Harap isi Gambar Asli, Lokasi Simpan, Kata Sandi, dan Teks Rahasia.'}
+            self.end_task("Gagal: Input tidak lengkap", "red", msg_box)
             return
         if not self.output_file_path.lower().endswith('.png'):
-             messagebox.showerror("Error Tipe File", "File output HARUS disimpan sebagai .png.")
-             self.end_task("Gagal: Tipe file output salah", "red")
+             msg_box = {'type': 'error', 'title': 'Error Tipe File', 'message': 'File output HARUS disimpan sebagai .png.'}
+             self.end_task("Gagal: Tipe file output salah", "red", msg_box)
              return
         
         secret_text = self.text_area.get("1.0", "end-1c")
         password = self.password_entry.get()
         
-        # 2. Mulai thread
         thread = threading.Thread(
             target=self.run_encode_in_thread, 
             args=(secret_text, password), 
@@ -382,37 +358,40 @@ class SteganographyApp:
     def run_encode_in_thread(self, secret_text, password):
         try:
             gui_encode_image(self.input_file_path, secret_text, password, self.output_file_path, self.log_message_safe)
-            # Sukses
             self.root.after(0, self.on_encode_complete, None) 
         except Exception as e:
-            # Gagal
             self.root.after(0, self.on_encode_complete, str(e))
 
     def on_encode_complete(self, error_message):
         if error_message:
-            messagebox.showerror("Gagal Menyisipkan", error_message)
-            self.end_task(f"Gagal: {error_message}", "red")
+            msg_box = {'type': 'error', 'title': 'Gagal Menyisipkan', 'message': error_message}
+            self.end_task(f"Gagal: {error_message}", "red", msg_box)
         else:
-            messagebox.showinfo("Sukses", f"Teks berhasil disisipkan!\nFile disimpan di: {self.output_file_path}")
-            self.end_task("Sukses: Teks disisipkan!", "green")
+            msg = f"Teks berhasil disisipkan!\nFile disimpan di: {self.output_file_path}"
+            msg_box = {'type': 'info', 'title': 'Sukses', 'message': msg}
+            
+            self.input_file_path = self.output_file_path 
+            new_filename = os.path.basename(self.input_file_path)
+            self.lbl_input.config(text=f"File: {new_filename}") 
+            self.log_message_safe(f"Input file sekarang otomatis diatur ke: {new_filename}")
+
+            self.end_task("Sukses: Teks disisipkan!", "green", msg_box)
 
 
     def threaded_decode_action(self):
-        # 1. Validasi
         if not self.start_task("Pengecekan Teks"): return
         if not self.input_file_path:
-            messagebox.showerror("Input Kurang", "Silakan pilih Gambar Asli yang ingin dicek.")
-            self.end_task("Gagal: Gambar tidak dipilih", "red")
+            msg_box = {'type': 'error', 'title': 'Input Kurang', 'message': 'Silakan pilih Gambar Asli yang ingin dicek.'}
+            self.end_task("Gagal: Gambar tidak dipilih", "red", msg_box)
             return
         if not self.password_entry.get():
-            messagebox.showerror("Input Kurang", "Silakan masukkan Kata Sandi.")
-            self.end_task("Gagal: Kata sandi kosong", "red")
+            msg_box = {'type': 'error', 'title': 'Input Kurang', 'message': 'Silakan masukkan Kata Sandi.'}
+            self.end_task("Gagal: Kata sandi kosong", "red", msg_box)
             return
         
-        self.text_area.delete("1.0", "end") # Bersihkan dulu
+        self.text_area.delete("1.0", "end")
         password = self.password_entry.get()
         
-        # 2. Mulai thread
         thread = threading.Thread(
             target=self.run_decode_in_thread, 
             args=(password,), 
@@ -429,30 +408,28 @@ class SteganographyApp:
 
     def on_decode_complete(self, found_text, error_message):
         if error_message:
-            messagebox.showerror("Gagal Pengecekan", error_message)
-            self.end_task(f"Gagal: {error_message}", "red")
+            msg_box = {'type': 'error', 'title': 'Gagal Pengecekan', 'message': error_message}
+            self.end_task(f"Gagal: {error_message}", "red", msg_box)
         elif found_text:
             self.text_area.insert("1.0", found_text)
-            messagebox.showinfo("Sukses", "Teks tersembunyi ditemukan dan ditampilkan.")
-            self.end_task("Sukses: Teks ditemukan!", "green")
-        else: # found_text is None, tapi tidak ada error
-            messagebox.showinfo("Info", "Tidak ada teks tersembunyi yang ditemukan (atau kata sandi salah).")
-            self.end_task("Info: Teks tidak ditemukan", "black")
+            msg_box = {'type': 'info', 'title': 'Sukses', 'message': 'Teks tersembunyi ditemukan dan ditampilkan.'}
+            self.end_task("Sukses: Teks ditemukan!", "green", msg_box)
+        else: # found_text is None
+            msg_box = {'type': 'info', 'title': 'Info', 'message': 'Tidak ada teks tersembunyi yang ditemukan (atau kata sandi salah).'}
+            self.end_task("Info: Teks tidak ditemukan", "black", msg_box)
 
 
     def threaded_clean_action(self):
-        # 1. Validasi
         if not self.start_task("Pembersihan Gambar"): return
         if not self.input_file_path or not self.output_file_path:
-            messagebox.showerror("Input Kurang", "Pilih Gambar Asli dan Lokasi Simpan.")
-            self.end_task("Gagal: Input tidak lengkap", "red")
+            msg_box = {'type': 'error', 'title': 'Input Kurang', 'message': 'Pilih Gambar Asli dan Lokasi Simpan.'}
+            self.end_task("Gagal: Input tidak lengkap", "red", msg_box)
             return
         if not self.output_file_path.lower().endswith('.png'):
-             messagebox.showerror("Error Tipe File", "File output HARUS disimpan sebagai .png.")
-             self.end_task("Gagal: Tipe file salah", "red")
+             msg_box = {'type': 'error', 'title': 'Error Tipe File', 'message': 'File output HARUS disimpan sebagai .png.'}
+             self.end_task("Gagal: Tipe file salah", "red", msg_box)
              return
 
-        # 2. Mulai thread
         thread = threading.Thread(
             target=self.run_clean_in_thread, 
             daemon=True
@@ -468,11 +445,18 @@ class SteganographyApp:
 
     def on_clean_complete(self, error_message):
         if error_message:
-            messagebox.showerror("Gagal Membersihkan", error_message)
-            self.end_task(f"Gagal: {error_message}", "red")
+            msg_box = {'type': 'error', 'title': 'Gagal Membersihkan', 'message': error_message}
+            self.end_task(f"Gagal: {error_message}", "red", msg_box)
         else:
-            messagebox.showinfo("Sukses", f"Gambar berhasil dibersihkan!\nFile bersih disimpan di: {self.output_file_path}")
-            self.end_task("Sukses: Gambar dibersihkan!", "green")
+            msg = f"Gambar berhasil dibersihkan!\nFile bersih disimpan di: {self.output_file_path}"
+            msg_box = {'type': 'info', 'title': 'Sukses', 'message': msg}
+            
+            self.input_file_path = self.output_file_path 
+            new_filename = os.path.basename(self.input_file_path)
+            self.lbl_input.config(text=f"File: {new_filename}") 
+            self.log_message_safe(f"Input file sekarang otomatis diatur ke file bersih: {new_filename}")
+
+            self.end_task("Sukses: Gambar dibersihkan!", "green", msg_box)
 
 
     def clear_text_action(self):
